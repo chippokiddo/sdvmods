@@ -2,7 +2,7 @@
 
 ## Contents:
 
-[Custom Winter Start Gifts](#custom-winter-star-gifts)
+[Custom Winter Star Gifts](#custom-winter-star-gifts)
 
 ## Custom Winter Star Gifts
 
