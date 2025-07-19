@@ -1,0 +1,95 @@
+{
+    "Format": "2.7.0",
+    "ConfigSchema": {
+        "TextureStyle": {
+            "AllowValues": "Auto, Vanilla, Earthy",
+            "Default": "Auto"
+        }
+    },
+    "DynamicTokens": [
+        {
+            "Name": "ColorPalette",
+            "Value": "Earthy",
+            "When": {
+                "TextureStyle": "Auto",
+                "HasMod |contains= DaisyNiko.EarthyInteriors, DaisyNiko.EarthyRecolour": true
+            }
+        },
+        {
+            "Name": "ColorPalette",
+            "Value": "Vanilla",
+            "When": {
+                "TextureStyle": "Auto"
+            }
+        },
+        {
+            "Name": "ColorPalette",
+            "Value": "{{TextureStyle}}",
+            "When": {
+                "TextureStyle": "Vanilla, Earthy"
+            }
+        }
+    ],
+    "Changes": [
+        {
+            "Action": "Load",
+            "Target": "{{ModId}}/wood_barrel",
+            "FromFile": "assets/{{ColorPalette}}/wood_barrel.png"
+        },
+        {
+            "Action": "Load",
+            "Target": "{{ModId}}/wood_barrel_l",
+            "FromFile": "assets/{{ColorPalette}}/wood_barrel_l.png"
+        },
+        {
+            "Action": "Load",
+            "Target": "{{ModId}}/wood_barrel_r",
+            "FromFile": "assets/{{ColorPalette}}/wood_barrel_r.png"
+        },
+        {
+            "Action": "EditData",
+            "Target": "Data/BigCraftables",
+            "Entries": {
+                "{{ModId}}_WoodBarrel": {
+                    "DisplayName": "Wood Barrel",
+                    "Description": "A wooden barrel.",
+                    "Price": 150,
+                    "Fragility": 0,
+                    "CanBePlacedIndoors": true,
+                    "CanBePlacedOutdoors": true,
+                    "Texture": "{{ModId}}/wood_barrel",
+                    "SpriteIndex": 0
+                },
+                "{{ModId}}_WoodBarrelLeft": {
+                    "DisplayName": "Wood Barrel Piece L",
+                    "Description": "The left side of a big barrel.",
+                    "Price": 200,
+                    "Fragility": 0,
+                    "CanBePlacedIndoors": true,
+                    "CanBePlacedOutdoors": true,
+                    "Texture": "{{ModId}}/wood_barrel_l",
+                    "SpriteIndex": 0
+                },
+                "{{ModId}}_WoodBarrelRight": {
+                    "DisplayName": "Wood Barrel Piece R",
+                    "Description": "The right side of a big barrel.",
+                    "Price": 200,
+                    "Fragility": 0,
+                    "CanBePlacedIndoors": true,
+                    "CanBePlacedOutdoors": true,
+                    "Texture": "{{ModId}}/wood_barrel_r",
+                    "SpriteIndex": 0
+                }
+            }
+        },
+        {
+            "Action": "EditData",
+            "Target": "Data/CraftingRecipes",
+            "Entries": {
+                "Wood Barrel": "388 30/Home/{{ModId}}_WoodBarrel/true/null/",
+                "Wood Barrel Piece L": "388 40/Home/{{ModId}}_WoodBarrelLeft/true/null/",
+                "Wood Barrel Piece R": "388 40/Home/{{ModId}}_WoodBarrelRight/true/null/"
+            }
+        }
+    ]
+}

@@ -1,0 +1,23 @@
+{
+    "Name": "Placeable Wood Barrels",
+    "Author": "farmerchip",
+    "Version": "1.0.1",
+    "Description": "Adds wood barrels as placeable furniture",
+    "UniqueID": "farmerchip.WoodBarrels",
+    "ContentPackFor": {
+        "UniqueID": "Pathoschild.ContentPatcher"
+    },
+    "UpdateKeys": [
+        "Nexus:35171"
+    ],
+    "Dependencies": [
+        {
+            "UniqueID": "DaisyNiko.EarthyRecolour",
+            "IsRequired": false
+        },
+        {
+            "UniqueID": "DaisyNiko.EarthyInteriors",
+            "IsRequired": false
+        }
+    ]
+}
