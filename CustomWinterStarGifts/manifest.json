@@ -1,0 +1,18 @@
+{
+	"Name": "Custom Winter Star Gifts",
+	"Author": "farmerchip",
+	"Version": "1.0.0",
+	"Description": "Allows players to customize their Winter Star gifts based on NPC friendship levels",
+	"UniqueID": "farmerchip.CustomWinterStarGifts",
+	"EntryDll": "CustomWinterStarGifts.dll",
+	"MinimumApiVersion": "4.0.0",
+	"UpdateKeys": [
+		"Nexus:35796"
+	],
+	"Dependencies": [
+		{
+			"UniqueID": "spacechase0.GenericModConfigMenu",
+			"IsRequired": false
+		}
+	]
+}
