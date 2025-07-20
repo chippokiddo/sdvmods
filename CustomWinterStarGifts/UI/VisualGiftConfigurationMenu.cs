@@ -862,8 +862,6 @@ namespace CustomWinterStarGifts.UI
 			// Reset both lists to defaults
 			LikedGifts = defaultConfig.GetLikedGiftItems();
 			LovedGifts = defaultConfig.GetLovedGiftItems();
-
-			Game1.addHUDMessage(new HUDMessage("Reset to default gifts!", 2));
 		}
 
 		private void SaveAndExit()

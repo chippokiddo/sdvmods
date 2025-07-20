@@ -7,8 +7,8 @@ namespace CustomWinterStarGifts
 {
     public class ModConfig
     {
-        public string LikedGiftIds { get; set; } = "18,348,346";
-        public string LovedGiftIds { get; set; } = "72,74,424";
+        public string LikedGiftIds { get; set; } = "18,346,348";
+        public string LovedGiftIds { get; set; } = "60,72,424";
         public KeybindList OpenVisualMenuKey { get; set; } = KeybindList.Parse("F9");
 
         public List<int> GetLikedGiftIds()

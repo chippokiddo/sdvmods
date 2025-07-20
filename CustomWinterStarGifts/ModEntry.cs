@@ -40,9 +40,9 @@ namespace CustomWinterStarGifts
 
 		private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
 		{
-			// Register console commands for testing
+			// Register console commands
 			Helper.ConsoleCommands.Add("configure_gifts", "Open visual gift configuration menu", ConfigureGifts);
-			Helper.ConsoleCommands.Add("reset_gifts", "Reset gift configuration", ResetGifts);
+			Helper.ConsoleCommands.Add("default_winter_gifts", "Reset gift configuration to default Winter Star gifts", SetDefaultWinterGifts);
 			Helper.ConsoleCommands.Add("test_winter_star", "Test Winter Star gift distribution", TestWinterStarGifts);
 
 			// Setup Generic Mod Config Menu integration
@@ -107,7 +107,6 @@ namespace CustomWinterStarGifts
 					{
 						Game1.player.addItemToInventoryBool(customGift);
 						string quantityText = customGift.Stack > 1 ? $" x{customGift.Stack}" : "";
-						Game1.addHUDMessage(new HUDMessage($"Custom Winter Star gift: {customGift.Name}{quantityText}", 2));
 						Monitor.Log($"Replaced Winter Star gift with custom gift: {customGift.Name} x{customGift.Stack}", LogLevel.Info);
 					}
 					else
@@ -226,51 +225,152 @@ namespace CustomWinterStarGifts
 		{
 			try
 			{
-				// Method 1: Check if in an event first
 				if (Game1.CurrentEvent != null)
 				{
-					// During the gift-receiving cutscene, check for current speaker
-					if (Game1.currentSpeaker != null)
+					var playerTile = Game1.player.TilePoint.ToVector2();
+
+					// Method 1: During the gift-receiving cutscene, look for the NPC approaching the tree
+					if (Game1.currentLocation?.Name == "Town")
 					{
-						return Game1.currentSpeaker.Name;
+						var nearbyValidNPCs = Game1.currentLocation.characters
+							.Where(npc => npc != null &&
+										 !string.IsNullOrEmpty(npc.Name) &&
+										 IsValidWinterStarGiftGiver(npc.Name))
+							.Select(npc => new
+							{
+								NPC = npc,
+								Distance = Vector2.Distance(playerTile, npc.TilePoint.ToVector2())
+							})
+							.Where(x => x.Distance <= 5f) // NPCs near the Christmas tree area
+							.OrderBy(x => x.Distance)
+							.ToList();
+
+						// there should ideally be only one relevant NPC
+						if (nearbyValidNPCs.Count == 1)
+						{
+							Monitor.Log($"Gift giver identified at Christmas tree: {nearbyValidNPCs[0].NPC.Name} (distance: {nearbyValidNPCs[0].Distance:F1})", LogLevel.Debug);
+							return nearbyValidNPCs[0].NPC.Name;
+						}
+
+						// if multiple NPCs near tree,  prioritize the closest one
+						if (nearbyValidNPCs.Any())
+						{
+							var closest = nearbyValidNPCs.First();
+							if (closest.Distance <= 3f)
+							{
+								Monitor.Log($"Gift giver identified - closest to Christmas tree: {closest.NPC.Name} (distance: {closest.Distance:F1})", LogLevel.Debug);
+								return closest.NPC.Name;
+							}
+							else
+							{
+								Monitor.Log($"Multiple NPCs near tree, closest ({closest.NPC.Name}) not close enough (distance: {closest.Distance:F1})", LogLevel.Debug);
+							}
+						}
 					}
 
-					// If no current speaker, look for NPCs in the current location during the event
-					foreach (var npc in Game1.currentLocation.characters)
+					// Method 2: Check event actors for gift givers (fallback)
+					if (Game1.CurrentEvent.actors != null && Game1.CurrentEvent.actors.Count > 0)
 					{
-						if (npc != null && !string.IsNullOrEmpty(npc.Name))
+						var validEventActors = Game1.CurrentEvent.actors
+							.Where(actor => actor != null &&
+										   !string.IsNullOrEmpty(actor.Name) &&
+										   IsValidWinterStarGiftGiver(actor.Name))
+							.ToList();
+
+						if (validEventActors.Count == 1)
 						{
-							var playerTile = Game1.player.TilePoint.ToVector2();
-							var npcTile = npc.TilePoint.ToVector2();
-							if (Vector2.Distance(playerTile, npcTile) <= 3) // Close proximity during cutscene
+							Monitor.Log($"Gift giver identified - single valid event actor: {validEventActors[0].Name}", LogLevel.Debug);
+							return validEventActors[0].Name;
+						}
+
+						if (validEventActors.Count > 1)
+						{
+							var closestEventActor = validEventActors
+								.OrderBy(actor => Vector2.Distance(playerTile, actor.TilePoint.ToVector2()))
+								.First();
+
+							float distance = Vector2.Distance(playerTile, closestEventActor.TilePoint.ToVector2());
+							if (distance <= 4f)
 							{
-								return npc.Name;
+								Monitor.Log($"Gift giver identified - closest valid event actor: {closestEventActor.Name} (distance: {distance:F1})", LogLevel.Debug);
+								return closestEventActor.Name;
 							}
+						}
+					}
+
+					// Method 3: Current speaker check - only if very close and during event
+					if (Game1.currentSpeaker != null &&
+						!string.IsNullOrEmpty(Game1.currentSpeaker.Name) &&
+						IsValidWinterStarGiftGiver(Game1.currentSpeaker.Name))
+					{
+						float speakerDistance = Vector2.Distance(playerTile, Game1.currentSpeaker.TilePoint.ToVector2());
+						if (speakerDistance <= 2f)
+						{
+							Monitor.Log($"Gift giver identified - current speaker giving gift: {Game1.currentSpeaker.Name} (distance: {speakerDistance:F1})", LogLevel.Debug);
+							return Game1.currentSpeaker.Name;
 						}
 					}
 				}
 
-				// Method 2: If not in event, find the closest NPC
-				if (Game1.currentLocation != null)
-				{
-					var playerTile = Game1.player.TilePoint.ToVector2();
-					var closestNPC = Game1.currentLocation.characters
-						.Where(npc => npc != null && !string.IsNullOrEmpty(npc.Name))
-						.OrderBy(npc => Vector2.Distance(playerTile, npc.TilePoint.ToVector2()))
-						.FirstOrDefault();
-
-					if (closestNPC != null && Vector2.Distance(playerTile, closestNPC.TilePoint.ToVector2()) <= 2)
-					{
-						return closestNPC.Name;
-					}
-				}
+				// No event or unable to determine - mod will use random selection
+				Monitor.Log("Could not determine Winter Star gift giver - using random gift selection", LogLevel.Debug);
+				return null;
 			}
 			catch (Exception ex)
 			{
 				Monitor.Log($"Error determining gift giver: {ex.Message}", LogLevel.Warn);
+				return null;
+			}
+		}
+
+		private bool IsValidWinterStarGiftGiver(string npcName)
+		{
+			if (string.IsNullOrEmpty(npcName)) return false;
+
+			// NPCs that are explicitly NEVER Winter Star gift givers according to wiki
+			var excludedNPCs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+			{
+				"Dwarf", "Krobus", "Marlon", "Sandy", "Wizard"
+			};
+
+			// NPCs that give specific gifts - these ARE participants
+			var specificGiftGivers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+			{
+				"Clint", "Marnie", "Robin", "Willy", "Evelyn"
+			};
+
+			// Children who can be gift givers
+			var childGiftGivers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+			{
+				"Jas", "Vincent", "Leo"
+			};
+
+			// If explicitly excluded, they can't be gift givers
+			if (excludedNPCs.Contains(npcName))
+			{
+				return false;
 			}
 
-			return null; // Could not determine gift giver
+			// If they're a known specific gift giver or child gift giver, they definitely can be
+			if (specificGiftGivers.Contains(npcName) || childGiftGivers.Contains(npcName))
+			{
+				return true;
+			}
+
+			// For any adult except Clint, Evelyn, Marnie, Robin, or Willy gifts,
+			// need to check if this is a marriageable NPC or other adult villager
+			var adultVillagers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+			{
+				// bachelor and bachelorettes
+				"Alex", "Elliott", "Harvey", "Sam", "Sebastian", "Shane",
+				"Abigail", "Emily", "Haley", "Leah", "Maru", "Penny",
+				
+				// Other adult NPCs who can give gifts
+				"Caroline", "Demetrius", "George", "Gus", "Jodi", "Kent",
+				"Lewis", "Linus", "Pam", "Pierre"
+			};
+
+			return adultVillagers.Contains(npcName);
 		}
 
 		private System.Collections.Generic.Dictionary<int, int> GetCurrentInventory()
@@ -379,28 +479,30 @@ namespace CustomWinterStarGifts
 			OpenVisualGiftConfigurationMenu();
 		}
 
-		private void ResetGifts(string command, string[] args)
+		private void SetDefaultWinterGifts(string command, string[] args)
 		{
 			Config = new ModConfig();
-			HasConfiguredGifts = false;
+			HasConfiguredGifts = !string.IsNullOrEmpty(Config.LikedGiftIds) || !string.IsNullOrEmpty(Config.LovedGiftIds);
 			Helper.WriteConfig(Config);
-			Game1.addHUDMessage(new HUDMessage("Gift preferences reset!", 2));
+
+			Monitor.Log("Gift configuration reset to default Winter Star gifts:", LogLevel.Info);
+			Monitor.Log($"Liked gifts: {Config.LikedGiftIds}", LogLevel.Info);
+			Monitor.Log($"Loved gifts: {Config.LovedGiftIds}", LogLevel.Info);
 		}
 
 		private void TestWinterStarGifts(string command, string[] args)
 		{
-			if (HasConfiguredGifts)
+			var testGift = GetCustomGift();
+			if (testGift != null)
 			{
-				var testGift = GetCustomGift();
-				if (testGift != null)
-				{
-					Game1.player.addItemToInventoryBool(testGift);
-					Game1.addHUDMessage(new HUDMessage($"Test gift: {testGift.Name} x{testGift.Stack}", 2));
-				}
+				Game1.player.addItemToInventoryBool(testGift);
+				Monitor.Log($"Test gift given: {testGift.Name} x{testGift.Stack}", LogLevel.Info);
+				Game1.addHUDMessage(new HUDMessage($"Test: {testGift.Name} x{testGift.Stack}", 2));
 			}
 			else
 			{
-				Game1.addHUDMessage(new HUDMessage("No gifts configured! Use configure_gifts command first.", 2));
+				// This shouldn't happen since there are default gifts but... just in case
+				Monitor.Log("Error: Could not generate test gift - unexpected error", LogLevel.Error);
 			}
 		}
 	}

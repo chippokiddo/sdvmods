@@ -2,7 +2,9 @@
 
 Repository for all my Stardew Valley mods.
 
-- [CP] Placeable Wood Barrels
+## Documentation
+
+- [[CP] Placeable Wood Barrels](https://github.com/chippokiddo/sdvmods/wiki/%5BCP%5D-Placeable-Wood-Barrels)
 - [Custom Winter Star Gifts](https://github.com/chippokiddo/sdvmods/wiki/Custom-Winter-Star-Gifts)
 
 ## Attributions
