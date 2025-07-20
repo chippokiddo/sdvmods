@@ -8,9 +8,10 @@ using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
 using CustomWinterStarGifts.Data;
+using CustomWinterStarGifts.Utilities;
 using Object = StardewValley.Object;
 
-namespace CustomWinterStarGifts.UI
+namespace CustomWinterStarGifts.Interface
 {
 	/// <summary> Visual gift configuration menu </summary>
 	public class VisualGiftConfigurationMenu : IClickableMenu
@@ -23,12 +24,12 @@ namespace CustomWinterStarGifts.UI
 		private List<ClickableComponent> CategoryTabs = new List<ClickableComponent>();
 		private List<Object> AllItems = new List<Object>();
 		private List<Object> FilteredItems = new List<Object>();
-		private List<(int id, int quantity)> LikedGifts = new List<(int, int)>();
-		private List<(int id, int quantity)> LovedGifts = new List<(int, int)>();
+		private List<(string id, int quantity)> LikedGifts = new List<(string, int)>();
+		private List<(string id, int quantity)> LovedGifts = new List<(string, int)>();
 
 		private bool ShowingLikedGifts = true;
 		private int CurrentCategory = 0;
-		private int QuantityMenuItemId = -1;
+		private string QuantityMenuItemId = string.Empty;
 		private int ScrollPosition = 0;
 
 		// Visual constants
@@ -91,8 +92,8 @@ namespace CustomWinterStarGifts.UI
 		{
 			var allItemIds = CategoryData.GetAllItemIds();
 			AllItems = allItemIds
-				.Select(id => new StardewValley.Object(id.ToString(), 1))
-				.Where(item => item.Name != "Error Item" && !string.IsNullOrEmpty(item.Name))
+				.Select(id => ItemIdHelper.CreateObjectFromStringId(id, 1))
+				.Where(item => item != null && item.Name != "Error Item" && !string.IsNullOrEmpty(item.Name))
 				.OrderBy(item => item.getCategoryName())
 				.ThenBy(item => item.salePrice())
 				.ThenBy(item => item.Name)
@@ -113,7 +114,11 @@ namespace CustomWinterStarGifts.UI
 				if (CategoryData.CategoryItems.ContainsKey(categoryName))
 				{
 					var categoryItemIds = CategoryData.CategoryItems[categoryName].ToHashSet();
-					FilteredItems = AllItems.Where(item => categoryItemIds.Contains(item.ParentSheetIndex)).ToList();
+					FilteredItems = AllItems.Where(item =>
+					{
+						string itemId = ItemIdHelper.GetItemStringId(item);
+						return categoryItemIds.Contains(itemId);
+					}).ToList();
 				}
 			}
 
@@ -208,7 +213,7 @@ namespace CustomWinterStarGifts.UI
 
 		public override void receiveScrollWheelAction(int direction)
 		{
-			if (QuantityMenuItemId >= 0) return;
+			if (!string.IsNullOrEmpty(QuantityMenuItemId)) return;
 
 			int scrollDelta = direction > 0 ? -1 : 1;
 			ScrollPosition = Math.Max(0, Math.Min(ScrollPosition + scrollDelta, MaxScroll));
@@ -249,11 +254,11 @@ namespace CustomWinterStarGifts.UI
 			DrawActionButtons(b);
 
 			// Draw quantity selector if active
-			if (QuantityMenuItemId >= 0)
+			if (!string.IsNullOrEmpty(QuantityMenuItemId))
 			{
 				DrawQuantitySelector(b);
 			}
-
+			
 			// Draw tooltips last
 			DrawTooltips(b);
 
@@ -266,7 +271,7 @@ namespace CustomWinterStarGifts.UI
 		{
 			// Calculate custom dimensions for the counter background
 			int counterWidth = width - 200;
-			int counterHeight = COUNTER_HEIGHT + 10; 
+			int counterHeight = COUNTER_HEIGHT + 10;
 			int counterX = CounterArea.X + (CounterArea.Width - counterWidth) / 2; // center horizontally
 			int counterY = CounterArea.Y + 10;
 
@@ -359,9 +364,9 @@ namespace CustomWinterStarGifts.UI
 					tabColor, Game1.pixelZoom, false
 				);
 
-				// Tab icon
-				var iconItem = new Object(CategoryData.CategoryIcons[i].ToString(), 1);
-				if (iconItem.Name != "Error Item")
+				// Tab icon - now using centralized helper
+				var iconItem = ItemIdHelper.CreateObjectFromStringId(CategoryData.CategoryIcons[i], 1);
+				if (iconItem != null && iconItem.Name != "Error Item")
 				{
 					float iconScale = 0.75f;
 					Vector2 iconPos = new Vector2(
@@ -387,8 +392,12 @@ namespace CustomWinterStarGifts.UI
 
 				var item = FilteredItems[itemIndex];
 				var currentList = ShowingLikedGifts ? LikedGifts : LovedGifts;
-				var selectedItem = currentList.FirstOrDefault(x => x.id == item.ParentSheetIndex);
-				bool isSelected = selectedItem.id != 0;
+
+				// Use centralized helper to get consistent item ID
+				string itemId = ItemIdHelper.GetItemStringId(item);
+
+				var selectedItem = currentList.FirstOrDefault(x => x.id == itemId);
+				bool isSelected = !string.IsNullOrEmpty(selectedItem.id);
 				bool isHovered = slot.bounds.Contains(Game1.getOldMouseX(), Game1.getOldMouseY());
 
 				// Slot background
@@ -419,7 +428,7 @@ namespace CustomWinterStarGifts.UI
 					Utility.drawTinyDigits(selectedItem.quantity, b, quantityPos, 3f, 1f, Color.White);
 				}
 
-				// Store hovered item for tooltip - DON'T draw tooltip here!
+				// Store hovered item for tooltip
 				if (isHovered)
 				{
 					HoveredItem = item;
@@ -579,18 +588,19 @@ namespace CustomWinterStarGifts.UI
 		private void DrawTooltips(SpriteBatch b)
 		{
 			// Don't show tooltips when quantity selector is active
-			if (QuantityMenuItemId >= 0) return;
+			if (!string.IsNullOrEmpty(QuantityMenuItemId)) return;
 
 			// Draw item tooltip if hovering over an item
 			if (HoveredItem != null)
 			{
 				var currentList = ShowingLikedGifts ? LikedGifts : LovedGifts;
-				var selectedItem = currentList.FirstOrDefault(x => x.id == HoveredItem.ParentSheetIndex);
+				string itemId = ItemIdHelper.GetItemStringId(HoveredItem);
+				var selectedItem = currentList.FirstOrDefault(x => x.id == itemId);
 
 				string tooltipText = HoveredItem.getDescription();
 
 				// Add quantity if selected and more than 1
-				if (selectedItem.id != 0 && selectedItem.quantity > 1)
+				if (!string.IsNullOrEmpty(selectedItem.id) && selectedItem.quantity > 1)
 				{
 					tooltipText = $"(x{selectedItem.quantity})\n" + tooltipText; // Prepend quantity
 				}
@@ -618,7 +628,7 @@ namespace CustomWinterStarGifts.UI
 		public override void receiveLeftClick(int x, int y, bool playSound = true)
 		{
 			// Handle quantity selector
-			if (QuantityMenuItemId >= 0)
+			if (!string.IsNullOrEmpty(QuantityMenuItemId))
 			{
 				Rectangle popup = new Rectangle(
 					xPositionOnScreen + width / 2 - 200,
@@ -649,14 +659,14 @@ namespace CustomWinterStarGifts.UI
 						if (buttonRect.Contains(x, y))
 						{
 							SetItemQuantity(QuantityMenuItemId, quantities[i]);
-							QuantityMenuItemId = -1;
+							QuantityMenuItemId = string.Empty;
 							Game1.playSound("smallSelect");
 							return;
 						}
 					}
 				}
 
-				QuantityMenuItemId = -1;
+				QuantityMenuItemId = string.Empty;
 				return;
 			}
 
@@ -681,7 +691,8 @@ namespace CustomWinterStarGifts.UI
 					if (itemIndex < FilteredItems.Count)
 					{
 						var item = FilteredItems[itemIndex];
-						ToggleItemSelection(item.ParentSheetIndex);
+						string itemId = ItemIdHelper.GetItemStringId(item);
+						ToggleItemSelection(itemId);
 						Game1.playSound("smallSelect");
 					}
 					return;
@@ -726,9 +737,10 @@ namespace CustomWinterStarGifts.UI
 			}
 		}
 
+
 		public override void receiveRightClick(int x, int y, bool playSound = true)
 		{
-			if (QuantityMenuItemId >= 0) return;
+			if (!string.IsNullOrEmpty(QuantityMenuItemId)) return;
 
 			// Right-click on item to set quantity
 			foreach (var slot in ItemSlots)
@@ -739,7 +751,8 @@ namespace CustomWinterStarGifts.UI
 					if (itemIndex < FilteredItems.Count)
 					{
 						var item = FilteredItems[itemIndex];
-						QuantityMenuItemId = item.ParentSheetIndex;
+						string itemId = ItemIdHelper.GetItemStringId(item);
+						QuantityMenuItemId = itemId;
 						Game1.playSound("smallSelect");
 					}
 					return;
@@ -749,11 +762,11 @@ namespace CustomWinterStarGifts.UI
 
 		public override void receiveKeyPress(Keys key)
 		{
-			if (QuantityMenuItemId >= 0)
+			if (!string.IsNullOrEmpty(QuantityMenuItemId))
 			{
 				if (key == Keys.Escape)
 				{
-					QuantityMenuItemId = -1;
+					QuantityMenuItemId = string.Empty;
 				}
 				return;
 			}
@@ -823,12 +836,12 @@ namespace CustomWinterStarGifts.UI
 			}
 		}
 
-		private void ToggleItemSelection(int itemId)
+		private void ToggleItemSelection(string itemId)
 		{
 			var currentList = ShowingLikedGifts ? LikedGifts : LovedGifts;
 			var existingItem = currentList.FirstOrDefault(x => x.id == itemId);
 
-			if (existingItem.id != 0)
+			if (!string.IsNullOrEmpty(existingItem.id))
 			{
 				currentList.Remove(existingItem);
 			}
@@ -838,12 +851,12 @@ namespace CustomWinterStarGifts.UI
 			}
 		}
 
-		private void SetItemQuantity(int itemId, int quantity)
+		private void SetItemQuantity(string itemId, int quantity)
 		{
 			var currentList = ShowingLikedGifts ? LikedGifts : LovedGifts;
 			var existingItem = currentList.FirstOrDefault(x => x.id == itemId);
 
-			if (existingItem.id != 0)
+			if (!string.IsNullOrEmpty(existingItem.id))
 			{
 				currentList.Remove(existingItem);
 			}
@@ -857,7 +870,7 @@ namespace CustomWinterStarGifts.UI
 		private void ClearCurrentSelection()
 		{
 			// Reset to default configuration
-			var defaultConfig = new ModConfig(); 
+			var defaultConfig = new ModConfig();
 
 			// Reset both lists to defaults
 			LikedGifts = defaultConfig.GetLikedGiftItems();
@@ -866,20 +879,15 @@ namespace CustomWinterStarGifts.UI
 
 		private void SaveAndExit()
 		{
-			// Format the gift strings with quantities
-			Config.LikedGiftIds = string.Join(",", LikedGifts.Select(item =>
-				item.quantity == 1 ? item.id.ToString() : $"{item.id}:{item.quantity}"));
-
-			Config.LovedGiftIds = string.Join(",", LovedGifts.Select(item =>
-				item.quantity == 1 ? item.id.ToString() : $"{item.id}:{item.quantity}"));
+			Config.LikedGiftIds = ItemIdHelper.FormatItemsWithQuantities(LikedGifts);
+			Config.LovedGiftIds = ItemIdHelper.FormatItemsWithQuantities(LovedGifts);
 
 			OnComplete?.Invoke(Config);
 			Game1.exitActiveMenu();
 		}
-
 		public override bool readyToClose()
 		{
-			return QuantityMenuItemId < 0;
+			return string.IsNullOrEmpty(QuantityMenuItemId);
 		}
 
 		public override void gameWindowSizeChanged(Rectangle oldBounds, Rectangle newBounds)

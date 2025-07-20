@@ -4,8 +4,11 @@ using System.Linq;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
+using StardewModdingAPI.Utilities;
 using StardewValley;
-using CustomWinterStarGifts.UI;
+using CustomWinterStarGifts.Data;
+using CustomWinterStarGifts.Interface;
+using CustomWinterStarGifts.Utilities;
 using Object = StardewValley.Object;
 
 namespace CustomWinterStarGifts
@@ -14,11 +17,10 @@ namespace CustomWinterStarGifts
 	{
 		private ModConfig Config;
 		private new IModHelper Helper;
-		private bool HasConfiguredGifts = false;
 		private IGenericModConfigMenuApi ConfigMenu;
 
 		// Track inventory before Winter Star to detect new gifts
-		private System.Collections.Generic.Dictionary<int, int> InventoryBeforeGift;
+		private System.Collections.Generic.Dictionary<string, int> InventoryBeforeGift;
 		private bool IsWinterStarActive = false;
 
 		public override void Entry(IModHelper helper)
@@ -26,8 +28,9 @@ namespace CustomWinterStarGifts
 			this.Helper = helper;
 			this.Config = helper.ReadConfig<ModConfig>();
 
-			// Check if player has configured their gifts
-			HasConfiguredGifts = !string.IsNullOrEmpty(Config.LikedGiftIds) || !string.IsNullOrEmpty(Config.LovedGiftIds);
+			// Migrate legacy IDs if needed
+			Config.MigrateLegacyIds();
+			helper.WriteConfig(Config);
 
 			helper.Events.GameLoop.GameLaunched += OnGameLaunched;
 			helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
@@ -41,12 +44,47 @@ namespace CustomWinterStarGifts
 		private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
 		{
 			// Register console commands
-			Helper.ConsoleCommands.Add("configure_gifts", "Open visual gift configuration menu", ConfigureGifts);
-			Helper.ConsoleCommands.Add("default_winter_gifts", "Reset gift configuration to default Winter Star gifts", SetDefaultWinterGifts);
-			Helper.ConsoleCommands.Add("test_winter_star", "Test Winter Star gift distribution", TestWinterStarGifts);
+			Helper.ConsoleCommands.Add("cwsg", "Manage Custom Winter Star Gifts. Usage: cwsg <menu|reset|test|keybind>", HandleCwsgCommand);
 
 			// Setup Generic Mod Config Menu integration
 			SetupConfigMenu();
+		}
+
+		private void HandleCwsgCommand(string command, string[] args)
+		{
+			if (args.Length == 0)
+			{
+				Monitor.Log("Usage: cwsg <menu|reset|test|keybind>", LogLevel.Info);
+				Monitor.Log("	menu - Open visual gift configuration menu", LogLevel.Info);
+				Monitor.Log("	reset - Reset gift configuration to defaults", LogLevel.Info);
+				Monitor.Log("	test - Test Winter Star gift distribution", LogLevel.Info);
+				Monitor.Log("	keybind - Configure keybind for opening menu", LogLevel.Info);
+				return;
+			}
+
+			switch (args[0].ToLower())
+			{
+				case "menu":
+					ConfigureGifts(command, args);
+					break;
+
+				case "reset":
+					SetDefaultWinterGifts(command, args);
+					break;
+
+				case "test":
+					TestWinterStarGifts(command, args);
+					break;
+
+				case "keybind":
+					ConfigureKeybind(command, args.Skip(1).ToArray()); // Pass remaining args for keybind value
+					break;
+
+				default:
+					Monitor.Log($"Unknown subcommand: {args[0]}", LogLevel.Error);
+					Monitor.Log("Usage: cwsg <menu|reset|test|keybind>", LogLevel.Info);
+					break;
+			}
 		}
 
 		private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
@@ -76,7 +114,7 @@ namespace CustomWinterStarGifts
 		private void OnInventoryChanged(object sender, InventoryChangedEventArgs e)
 		{
 			// Only act during Winter Star festival
-			if (!IsWinterStarActive || !HasConfiguredGifts)
+			if (!IsWinterStarActive)
 				return;
 
 			// Check for items being removed (player giving their gift)
@@ -123,13 +161,7 @@ namespace CustomWinterStarGifts
 
 		private bool WasInPreviousInventory(Item newItem)
 		{
-			if (InventoryBeforeGift == null) return false;
-
-			int itemId = newItem.ParentSheetIndex;
-			int currentQuantity = InventoryBeforeGift.ContainsKey(itemId) ? InventoryBeforeGift[itemId] : 0;
-
-			// Check if already had this item in the expected quantity
-			return currentQuantity >= newItem.Stack;
+			return ItemIdHelper.WasInPreviousInventory(newItem, InventoryBeforeGift);
 		}
 
 		private bool IsPotentialWinterStarGift(Item item)
@@ -148,18 +180,12 @@ namespace CustomWinterStarGifts
 					   obj.Category == Object.FishCategory ||
 					   obj.Category == Object.VegetableCategory ||
 					   obj.Category == Object.SeedsCategory ||
-					   obj.Category == Object.flowersCategory
+					   obj.Category == Object.flowersCategory ||
+					   obj.Category == Object.junkCategory
 				   )) ||
 				   item.Name.Contains("Bar") ||
 				   item.Name.Contains("Geode") ||
-				   item.Name.Contains("Seed") ||
-				   item.Name.Contains("Trash") ||
-				   item.Name.Contains("Broken Glasses") ||
-				   item.Name.Contains("Broken CD") ||
-				   item.Name.Contains("Driftwood") ||
-				   item.Name.Contains("Soggy Newspaper") ||
-				   item.Name.Contains("Rotten Plant") ||
-				   item.Name.Contains("Joja Cola")
+				   item.Name.Contains("Seed")
 			);
 		}
 
@@ -183,9 +209,10 @@ namespace CustomWinterStarGifts
 
 				var likedGiftItems = Config.GetLikedGiftItems();
 				var lovedGiftItems = Config.GetLovedGiftItems();
+				var lowFriendshipGifts = CategoryData.LowFriendshipGifts.ToList();
 
 				// Select gift pool based on friendship level
-				List<(int id, int quantity)> giftPool;
+				List<(string id, int quantity)> giftPool;
 
 				if (friendshipLevel >= 8 && lovedGiftItems.Count > 0)
 				{
@@ -201,16 +228,9 @@ namespace CustomWinterStarGifts
 				}
 				else
 				{
-					// Fallback: use loved gifts if available, otherwise liked gifts
-					giftPool = lovedGiftItems.Count > 0 ? lovedGiftItems : likedGiftItems;
-					Monitor.Log($"Using fallback gift selection (friendship: {friendshipLevel} hearts)", LogLevel.Debug);
-				}
-
-				if (giftPool.Count > 0)
-				{
-					var random = new Random();
-					var selectedGift = giftPool[random.Next(giftPool.Count)];
-					return new Object(selectedGift.id.ToString(), selectedGift.quantity);
+					// 0-3 hearts: low friendship gifts
+					giftPool = CategoryData.LowFriendshipGifts.ToList();
+					Monitor.Log($"Using low friendship gifts for {friendshipLevel} heart friendship", LogLevel.Debug);
 				}
 			}
 			catch (Exception ex)
@@ -219,6 +239,12 @@ namespace CustomWinterStarGifts
 			}
 
 			return null;
+		}
+
+		/// <summary>Create an Object from a string ID</summary>
+		private Object CreateObjectFromStringId(string itemId, int quantity)
+		{
+			return ItemIdHelper.CreateObjectFromStringId(itemId, quantity, Monitor);
 		}
 
 		private string GetWinterStarGiftGiver()
@@ -373,20 +399,9 @@ namespace CustomWinterStarGifts
 			return adultVillagers.Contains(npcName);
 		}
 
-		private System.Collections.Generic.Dictionary<int, int> GetCurrentInventory()
+		private System.Collections.Generic.Dictionary<string, int> GetCurrentInventory()
 		{
-			var inventory = new System.Collections.Generic.Dictionary<int, int>();
-
-			foreach (var item in Game1.player.Items)
-			{
-				if (item != null)
-				{
-					int id = item.ParentSheetIndex;
-					inventory[id] = inventory.ContainsKey(id) ? inventory[id] + item.Stack : item.Stack;
-				}
-			}
-
-			return inventory;
+			return ItemIdHelper.GetInventoryAsStringIds(Game1.player);
 		}
 
 		private void SetupConfigMenu()
@@ -402,8 +417,8 @@ namespace CustomWinterStarGifts
 				reset: () => Config = new ModConfig(),
 				save: () =>
 				{
+					Config.MigrateLegacyIds(); // Check IDs are migrated when saving
 					Helper.WriteConfig(Config);
-					HasConfiguredGifts = !string.IsNullOrEmpty(Config.LikedGiftIds) || !string.IsNullOrEmpty(Config.LovedGiftIds);
 				}
 			);
 
@@ -420,7 +435,7 @@ namespace CustomWinterStarGifts
 			ConfigMenu.AddTextOption(
 				mod: ModManifest,
 				name: () => "Liked Gift IDs",
-				tooltip: () => "Comma-separated list of item IDs for liked gifts (4-7 hearts). Consider using the visual menu instead for easier selection. Format: ID or ID:quantity (e.g., 472:10 for 10 parsnip seeds).",
+				tooltip: () => "Comma-separated list of item IDs for liked gifts (4-7 hearts). Consider using the visual menu instead for easier selection. Format: (O)ID or (O)ID:quantity (e.g., (O)472:10 for 10 parsnip seeds).",
 				getValue: () => Config.LikedGiftIds,
 				setValue: value => Config.LikedGiftIds = value
 			);
@@ -428,7 +443,7 @@ namespace CustomWinterStarGifts
 			ConfigMenu.AddTextOption(
 				mod: ModManifest,
 				name: () => "Loved Gift IDs",
-				tooltip: () => "Comma-separated list of item IDs for loved gifts (8+ hearts). Consider using the visual menu instead for easier selection. Format: ID or ID:quantity (e.g., 472:10 for 10 parsnip seeds).",
+				tooltip: () => "Comma-separated list of item IDs for loved gifts (8+ hearts). Consider using the visual menu instead for easier selection. Format: (O)ID or (O)ID:quantity (e.g., (O)472:10 for 10 parsnip seeds).",
 				getValue: () => Config.LovedGiftIds,
 				setValue: value => Config.LovedGiftIds = value
 			);
@@ -441,14 +456,15 @@ namespace CustomWinterStarGifts
 
 			ConfigMenu.AddParagraph(
 				mod: ModManifest,
-				text: () => "Example item IDs: Prismatic Shard (74), Diamond (72), Cheese (424), Truffle Oil (432), Ancient Fruit (454), Starfruit (268), Parsnip Seeds (472:10 for 10 seeds)"
+				text: () => "Example item IDs: Prismatic Shard (O)74, Diamond (O)72, Cheese (O)424, Truffle Oil (O)432, Ancient Fruit (O)454, Starfruit (O)268, Parsnip Seeds (O)472:10 for 10 seeds"
 			);
 		}
 
 		private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
 		{
-			// Update configuration status
-			HasConfiguredGifts = !string.IsNullOrEmpty(Config.LikedGiftIds) || !string.IsNullOrEmpty(Config.LovedGiftIds);
+			// Migrate legacy IDs on save load
+			Config.MigrateLegacyIds();
+			Helper.WriteConfig(Config);
 		}
 
 		private void OnButtonsChanged(object sender, ButtonsChangedEventArgs e)
@@ -469,7 +485,7 @@ namespace CustomWinterStarGifts
 		private void OnConfigurationComplete(ModConfig newConfig)
 		{
 			Config = newConfig;
-			HasConfiguredGifts = !string.IsNullOrEmpty(Config.LikedGiftIds) || !string.IsNullOrEmpty(Config.LovedGiftIds);
+			Config.MigrateLegacyIds(); // consistency
 			Helper.WriteConfig(Config);
 			Game1.addHUDMessage(new HUDMessage("Gift preferences saved!", 2));
 		}
@@ -482,7 +498,7 @@ namespace CustomWinterStarGifts
 		private void SetDefaultWinterGifts(string command, string[] args)
 		{
 			Config = new ModConfig();
-			HasConfiguredGifts = !string.IsNullOrEmpty(Config.LikedGiftIds) || !string.IsNullOrEmpty(Config.LovedGiftIds);
+			Config.MigrateLegacyIds(); // Check new config uses string format
 			Helper.WriteConfig(Config);
 
 			Monitor.Log("Gift configuration reset to default Winter Star gifts:", LogLevel.Info);
@@ -503,6 +519,43 @@ namespace CustomWinterStarGifts
 			{
 				// This shouldn't happen since there are default gifts but... just in case
 				Monitor.Log("Error: Could not generate test gift - unexpected error", LogLevel.Error);
+			}
+		}
+
+		private void ConfigureKeybind(string command, string[] args)
+		{
+			if (args.Length == 0)
+			{
+				Monitor.Log($"Current keybind: {Config.OpenVisualMenuKey}", LogLevel.Info);
+				Monitor.Log("Usage: cwsg keybind <key>", LogLevel.Info);
+				Monitor.Log("Examples:", LogLevel.Info);
+				Monitor.Log("	cwsg keybind F9", LogLevel.Info);
+				Monitor.Log("	cwsg keybind LeftControl + G", LogLevel.Info);
+				Monitor.Log("	cwsg keybind LeftShift + F10", LogLevel.Info);
+				Monitor.Log("	Available keys: F1-F12, A-Z, 0-9, LeftControl, RightControl, LeftShift, RightShift, LeftAlt, RightAlt", LogLevel.Info);
+				return;
+			}
+
+			string keybindString = string.Join(" ", args);
+
+			try
+			{
+				var newKeybind = KeybindList.Parse(keybindString);
+				Config.OpenVisualMenuKey = newKeybind;
+				Helper.WriteConfig(Config);
+
+				Monitor.Log($"Keybind updated to: {Config.OpenVisualMenuKey}", LogLevel.Info);
+				Game1.addHUDMessage(new HUDMessage($"Gift menu keybind set to: {Config.OpenVisualMenuKey}", 2));
+			}
+			catch (Exception ex)
+			{
+				Monitor.Log($"Invalid keybind format: {keybindString}", LogLevel.Error);
+				Monitor.Log($"Error: {ex.Message}", LogLevel.Error);
+				Monitor.Log("Usage: cwsg keybind <key>", LogLevel.Info);
+				Monitor.Log("Examples:", LogLevel.Info);
+				Monitor.Log("	cwsg keybind F9", LogLevel.Info);
+				Monitor.Log("	cwsg keybind LeftControl + G", LogLevel.Info);
+				Monitor.Log("	cwsg keybind LeftShift + F10", LogLevel.Info);
 			}
 		}
 	}

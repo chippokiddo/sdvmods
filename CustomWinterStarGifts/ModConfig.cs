@@ -1,74 +1,52 @@
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using StardewModdingAPI.Utilities;
+using CustomWinterStarGifts.Utilities;
 
 namespace CustomWinterStarGifts
 {
     public class ModConfig
     {
-        public string LikedGiftIds { get; set; } = "18,346,348";
-        public string LovedGiftIds { get; set; } = "60,72,424";
+        public string LikedGiftIds { get; set; } = "(O)18,(O)346,(O)348";
+        public string LovedGiftIds { get; set; } = "(O)60,(O)72,(O)424";
         public KeybindList OpenVisualMenuKey { get; set; } = KeybindList.Parse("F9");
 
-        public List<int> GetLikedGiftIds()
+        public List<string> GetLikedGiftIds()
         {
-            return ParseItemIds(LikedGiftIds);
+            return ItemIdHelper.ParseItemIds(LikedGiftIds);
         }
 
-        public List<int> GetLovedGiftIds()
+        public List<string> GetLovedGiftIds()
         {
-            return ParseItemIds(LovedGiftIds);
+            return ItemIdHelper.ParseItemIds(LovedGiftIds);
         }
 
-        public List<(int id, int quantity)> GetLikedGiftItems()
+        public List<(string id, int quantity)> GetLikedGiftItems()
         {
-            return ParseItemIdsWithQuantity(LikedGiftIds);
+            return ItemIdHelper.ParseItemIdsWithQuantity(LikedGiftIds);
         }
 
-        public List<(int id, int quantity)> GetLovedGiftItems()
+        public List<(string id, int quantity)> GetLovedGiftItems()
         {
-            return ParseItemIdsWithQuantity(LovedGiftIds);
+            return ItemIdHelper.ParseItemIdsWithQuantity(LovedGiftIds);
         }
 
-        private List<int> ParseItemIds(string itemIdsString)
+        /// <summary>
+        /// Convert legacy numeric item IDs to new string format
+        /// This helps with backwards compatibility for existing config files
+        /// </summary>
+        public void MigrateLegacyIds()
         {
-            if (string.IsNullOrEmpty(itemIdsString)) return new List<int>();
-
-            return itemIdsString.Split(',')
-                .Select(id => id.Trim())
-                .Where(id => int.TryParse(id, out _))
-                .Select(int.Parse)
-                .ToList();
+            LikedGiftIds = ItemIdHelper.ConvertLegacyIdsToStringFormat(LikedGiftIds);
+            LovedGiftIds = ItemIdHelper.ConvertLegacyIdsToStringFormat(LovedGiftIds);
         }
 
-        private List<(int id, int quantity)> ParseItemIdsWithQuantity(string itemIdsString)
+        /// <summary>
+        /// Helper method to get numeric ID from string format for backwards compatibility
+        /// Delegate to ItemIdHelper
+        /// </summary>
+        public static int ExtractNumericId(string stringId)
         {
-            if (string.IsNullOrEmpty(itemIdsString)) return new List<(int id, int quantity)>();
-
-            return itemIdsString.Split(',')
-                .Select(itemString => itemString.Trim())
-                .Select(itemString =>
-                {
-                    if (itemString.Contains(':'))
-                    {
-                        var parts = itemString.Split(':');
-                        if (parts.Length == 2 &&
-                            int.TryParse(parts[0].Trim(), out int id) &&
-                            int.TryParse(parts[1].Trim(), out int quantity))
-                        {
-                            return (id: id, quantity: Math.Max(1, quantity));
-                        }
-                    }
-                    else if (int.TryParse(itemString, out int id))
-                    {
-                        return (id: id, quantity: 1);
-                    }
-
-                    return (id: 0, quantity: 0);
-                })
-                .Where(item => item.id > 0)
-                .ToList();
+            return ItemIdHelper.ExtractNumericId(stringId);
         }
     }
 }
